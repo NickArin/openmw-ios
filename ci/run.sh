@@ -210,6 +210,77 @@ CMAKEEOF
   else
     echo "- Round 17: WARNING IOKit find_library line not found in apps/openmw/CMakeLists.txt" >> results/summary.md
   fi
+  # Round 18 fix: Run 17 cleared every dep and engine configure (753s of
+  # build), then failed in components/myguiplatform/myguirendermanager.cpp:
+  # the MyGUI Drawable::drawImplementation uses the desktop fixed-function
+  # client-array API - GL_VERTEX_ARRAY / GL_TEXTURE_COORD_ARRAY /
+  # GL_COLOR_ARRAY, glEnableClientState/glDisableClientState and
+  # glVertexPointer/glColorPointer/glTexCoordPointer - none of which exist
+  # in OpenGL ES 3 (fixed function was removed in ES 2). Verified locally:
+  # this file is the ONLY engine source using that API.
+  # Replacement: the generic vertex-attribute API at OSG's conventional
+  # attribute locations, which is exactly what the gui shader consumes
+  # (files/shaders/core/gui.*: location 0 = Position, 3 = Color,
+  # 8 = TexCoord0) and what OSG's own VertexArrayState feeds. Same
+  # interleaved MyGUI::Vertex buffer, same stride and offsets
+  # (position 0 / colour 12 / texcoord 16); the colour attribute is
+  # normalized (GL_TRUE) because the fixed-function colour pointer always
+  # normalized unsigned-byte colours. The non-VBO branch is dead on GLES3
+  # (VBOs are core) but must still compile, so it is translated too.
+  MYGUI_CPP="build/openmw/components/myguiplatform/myguirendermanager.cpp"
+  if python3 - "$MYGUI_CPP" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+reps = [
+("""            glEnableClientState(GL_VERTEX_ARRAY);
+            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+            glEnableClientState(GL_COLOR_ARRAY);""",
+ """            glEnableVertexAttribArray(0);
+            glEnableVertexAttribArray(8);
+            glEnableVertexAttribArray(3);"""),
+("""                    glVertexPointer(3, GL_FLOAT, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(0));
+                    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(12));
+                    glTexCoordPointer(2, GL_FLOAT, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(16));""",
+ """                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), reinterpret_cast<const void*>(0));
+                    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(MyGUI::Vertex), reinterpret_cast<const void*>(12));
+                    glVertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), reinterpret_cast<const void*>(16));"""),
+("""                    glVertexPointer(3, GL_FLOAT, sizeof(MyGUI::Vertex),
+                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()));
+                    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MyGUI::Vertex),
+                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 12);
+                    glTexCoordPointer(2, GL_FLOAT, sizeof(MyGUI::Vertex),
+                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 16);""",
+ """                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex),
+                        vbo->getArray(0)->getDataPointer());
+                    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(MyGUI::Vertex),
+                        vbo->getArray(0)->getDataPointer() + 12);
+                    glVertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex),
+                        vbo->getArray(0)->getDataPointer() + 16);"""),
+("""            glDisableClientState(GL_VERTEX_ARRAY);
+            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+            glDisableClientState(GL_COLOR_ARRAY);""",
+ """            glDisableVertexAttribArray(0);
+            glDisableVertexAttribArray(8);
+            glDisableVertexAttribArray(3);"""),
+]
+for old, new in reps:
+    if src.count(old) != 1:
+        print("PATTERN NOT FOUND OR NOT UNIQUE: " + old.splitlines()[0].strip())
+        sys.exit(1)
+    src = src.replace(old, new)
+for legacy in ("glEnableClientState", "glVertexPointer", "glColorPointer", "glTexCoordPointer", "GL_VERTEX_ARRAY", "GL_COLOR_ARRAY", "GL_TEXTURE_COORD_ARRAY"):
+    if legacy in src:
+        print("LEGACY TOKEN REMAINS: " + legacy)
+        sys.exit(1)
+open(path, "w").write(src)
+print("mygui render manager patched to GLES3 generic vertex attributes")
+PYEOF
+  then
+    echo "- Round 18: patched myguirendermanager.cpp fixed-function client arrays -> GLES3 generic vertex attributes (locations 0/3/8)" >> results/summary.md
+  else
+    echo "- Round 18: WARNING myguirendermanager.cpp patch failed (pattern mismatch)" >> results/summary.md
+  fi
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
