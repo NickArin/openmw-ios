@@ -27,6 +27,34 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
   OPENAL_LIB="$(find "$SYSROOT" -iname "libopenal*" \( -name "*.a" -o -name "*.dylib" \) 2>/dev/null | head -1)"
   [ -z "$OPENAL_LIB" ] && OPENAL_LIB="$(find "$SYSROOT" -iname "OpenAL.framework" -type d 2>/dev/null | head -1)"
   echo "- generator: $GEN; openal lib: ${OPENAL_LIB:-NOT FOUND}" >> results/summary.md
+  # Round 8 insurance: if deps did not leave a boost_headers config package,
+  # generate the minimal one here too (BoostConfig.cmake requires it first).
+  BH_DIR="$SYSROOT/lib/cmake/boost_headers-1.85.0"
+  if [ ! -f "$BH_DIR/boost_headers-config.cmake" ]; then
+    mkdir -p "$BH_DIR"
+    cat > "$BH_DIR/boost_headers-config.cmake" <<'CMAKEEOF'
+get_filename_component(_BOOST_INCLUDEDIR "${CMAKE_CURRENT_LIST_DIR}/../../../include" ABSOLUTE)
+if(NOT TARGET Boost::headers)
+  add_library(Boost::headers INTERFACE IMPORTED)
+  set_target_properties(Boost::headers PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${_BOOST_INCLUDEDIR}")
+endif()
+set(boost_headers_VERSION "1.85.0")
+CMAKEEOF
+    cat > "$BH_DIR/boost_headers-config-version.cmake" <<'CMAKEEOF'
+set(PACKAGE_VERSION "1.85.0")
+set(PACKAGE_VERSION_UNSUITABLE FALSE)
+set(PACKAGE_VERSION_COMPATIBLE FALSE)
+set(PACKAGE_VERSION_EXACT FALSE)
+if(PACKAGE_VERSION VERSION_EQUAL PACKAGE_FIND_VERSION)
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+  set(PACKAGE_VERSION_EXACT TRUE)
+elseif(NOT PACKAGE_FIND_VERSION)
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+endif()
+CMAKEEOF
+    echo "- boost_headers config: generated fallback in ci/run.sh" >> results/summary.md
+  fi
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DCMAKE_INSTALL_PREFIX="$ROOT/install-openmw" \
@@ -53,6 +81,7 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DICU_I18N_LIBRARY_RELEASE="$SYSROOT/lib/libicui18n.a" \
       -DICU_DATA_LIBRARY_RELEASE="$SYSROOT/lib/libicudata.a" \
       -DBoost_DIR="$SYSROOT/lib/cmake/Boost-1.85.0" \
+      -Dboost_headers_DIR="$SYSROOT/lib/cmake/boost_headers-1.85.0" \
       -DSDL2_DIR="$SYSROOT/lib/cmake/SDL2" \
       -DLUA_INCLUDE_DIR="$SYSROOT/include/lua5.1" \
       -DLUA_LIBRARY="$SYSROOT/lib/liblua.a" \
@@ -134,6 +163,6 @@ else
 fi
 
 find "$SYSROOT" \( -name "*.a" -o -name "*.ipa" -o -name "*.dylib" \) | sort >> results/libs.txt || true
-{ echo "--- openal inventory:"; find "$SYSROOT" -iname "*openal*" | sort; echo "--- frameworks:"; find "$SYSROOT" -name "*.framework" | sort; } >> results/libs.txt || true
+{ echo "--- openal inventory:"; find "$SYSROOT" -iname "*openal*" | sort; echo "--- boost cmake inventory:"; find "$SYSROOT/lib/cmake" -maxdepth 2 -name "*.cmake" 2>/dev/null | sort; echo "--- frameworks:"; find "$SYSROOT" -name "*.framework" | sort; } >> results/libs.txt || true
 du -sh "$SYSROOT" >> results/summary.md
 echo "run.sh done"
