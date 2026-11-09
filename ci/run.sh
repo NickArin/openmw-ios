@@ -99,6 +99,36 @@ CMAKEEOF
     echo "- Xcode.app legacy path for OSG iPhone branch: $(ls -ld /Applications/Xcode.app 2>/dev/null || echo unavailable)" >> results/summary.md
   fi
   echo "- OSG iPhone branch: SDKVER=${SDK_VER}" >> results/summary.md
+  # Round 13 fix: Run 12 cleared OpenGL, then engine configure failed
+  # at the GENERATE step: $<TARGET_FILE:osgdb_dae> (apps/openmw,
+  # esmtool, niftest) and Target "osgdb_png" not found. Verified
+  # against the pinned OSG fork (OpenMW/osg 01cc2b58) sources:
+  # src/osgPlugins/CMakeLists.txt only adds a plugin directory when
+  # its package was found - png needs PNG_FOUND AND ZLIB_FOUND, jpeg
+  # needs JPEG_FOUND, dae needs COLLADA_FOUND. But the fork's root
+  # CMakeLists on APPLE never calls FIND_PACKAGE(PNG) or
+  # FIND_PACKAGE(JPEG) at all (legacy "OS X uses QuickTime" branch -
+  # it searches TIFF/QuickTime/QTKit instead), so on iOS those two
+  # plugins silently never get targets even though deps built
+  # libpng.a and libjpeg.a into the sysroot for exactly them.
+  # Freetype and ZLIB ARE searched in the fork's common block and are
+  # found from the seeded vars / SDK, so only PNG and JPEG need their
+  # FOUND flags seeded truthfully (the -D PNG/JPEG include+library
+  # vars below already point at the real sysroot libs, and the
+  # plugins consume exactly those vars). Collada is different: no
+  # collada-dom exists for iOS (it would also need libxml2, pcre and
+  # Boost filesystem/system, none of which are in the sysroot), and
+  # Morrowind content is NIF-based - osgdb_dae only loads .dae
+  # interchange models. Drop osgdb_dae from the cloned tree's
+  # USED_OSG_PLUGINS so the components static-plugin list only names
+  # targets that can exist; the list is the single source for both
+  # the extern OSGDB_* mapping and the components genex list.
+  if grep -q "^    osgdb_dae$" build/openmw/CMakeLists.txt; then
+    sed -i '' "/^    osgdb_dae$/d" build/openmw/CMakeLists.txt
+    echo "- Round 13: removed osgdb_dae from USED_OSG_PLUGINS (no Collada on iOS)" >> results/summary.md
+  else
+    echo "- Round 13: WARNING osgdb_dae line not found in cloned CMakeLists.txt" >> results/summary.md
+  fi
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DOSG_BUILD_PLATFORM_IPHONE=ON \
@@ -118,6 +148,8 @@ CMAKEEOF
       -DOPENMW_USE_SYSTEM_YAML_CPP=OFF \
       -DOPENMW_USE_SYSTEM_SQLITE3=OFF \
       -DOPENGL_PROFILE=GLES3 \
+      -DPNG_FOUND=TRUE \
+      -DJPEG_FOUND=TRUE \
       -DOPENGL_INCLUDE_DIR="$SYSROOT/include" \
       -DOPENGL_gl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DOPENGL_glu_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \

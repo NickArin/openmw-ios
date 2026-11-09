@@ -98,10 +98,22 @@ icu() {
 }
 
 ffmpeg() {
+  # Round 13 fix: Run 12 died here on a bare network reset - the
+  # ffmpeg.org download sat at 0 bytes for 85s, then curl (35) Recv
+  # failure: Connection reset by peer, so no libav* landed and the
+  # sysroot shrank by ~27M. Same medicine as the Lua51 fix: bounded
+  # retries on the primary, then a fallback source. The fallback is
+  # the official FFmpeg GitHub tag archive for n6.1.2 (the git tree
+  # ships its configure script, so no autogen step is needed); it
+  # extracts to FFmpeg-n6.1.2 instead of ffmpeg-6.1.2, hence SRCDIR.
   cd "$ROOT/build" &&
-  curl -L -o ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-6.1.2.tar.xz &&
-  tar xJf ffmpeg.tar.xz &&
-  cd ffmpeg-6.1.2 &&
+  { if curl -fL --retry 3 --retry-all-errors --connect-timeout 30 -o ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-6.1.2.tar.xz; then
+      tar xJf ffmpeg.tar.xz && FFMPEG_SRCDIR="ffmpeg-6.1.2"
+    else
+      curl -fL --retry 3 --retry-all-errors --connect-timeout 30 -o ffmpeg-gh.tar.gz https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n6.1.2.tar.gz &&
+      tar xzf ffmpeg-gh.tar.gz && FFMPEG_SRCDIR="FFmpeg-n6.1.2"
+    fi; } &&
+  cd "$FFMPEG_SRCDIR" &&
   ./configure --prefix="$SYSROOT" --enable-cross-compile --target-os=darwin --arch=arm64 \
     --cc="clang" --cxx="clang++" \
     --extra-cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
