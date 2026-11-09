@@ -41,6 +41,8 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DOPENGL_INCLUDE_DIR="$SDK/System/Library/Frameworks/OpenGLES.framework/Headers" \
       -DOPENGL_gl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DOPENGL_opengl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
+      -DLZ4_INCLUDE_DIR="$SYSROOT/include" \
+      -DLZ4_LIBRARY="$SYSROOT/lib/liblz4.a" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
       > logs/engine-configure.log 2>&1; then

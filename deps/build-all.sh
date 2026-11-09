@@ -49,8 +49,9 @@ libpng() {
 }
 
 libjpeg() {
-  git clone --depth 1 --branch 3.0.3 https://github.com/libjpeg-turbo/libjpeg-turbo.git "$ROOT/build/libjpeg" &&
-  cmake_dep libjpeg "$ROOT/build/libjpeg" -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=OFF
+  curl -L -o "$ROOT/build/jpeg.tar.gz" https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.3/libjpeg-turbo-3.0.3.tar.gz &&
+  tar xzf "$ROOT/build/jpeg.tar.gz" -C "$ROOT/build" &&
+  cmake_dep libjpeg "$ROOT/build/libjpeg-turbo-3.0.3" -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=OFF
 }
 
 # ---------- the big three ----------
@@ -170,8 +171,10 @@ lua51() {
   done &&
   ar rcs "$SYSROOT/lib/liblua.a" ./*.o &&
   mkdir -p "$SYSROOT/include/lua5.1" "$SYSROOT/include/lua" &&
-  cp lua.h lauxlib.h lualib.h luaconf.h lua.hpp "$SYSROOT/include/lua5.1/" &&
-  cp lua.h lauxlib.h lualib.h luaconf.h lua.hpp "$SYSROOT/include/lua/"
+  cp lua.h lauxlib.h lualib.h luaconf.h "$SYSROOT/include/lua5.1/" &&
+  cp lua.h lauxlib.h lualib.h luaconf.h "$SYSROOT/include/lua/" &&
+  ( cp lua.hpp "$SYSROOT/include/lua5.1/" 2>/dev/null || cp ../etc/lua.hpp "$SYSROOT/include/lua5.1/" ) &&
+  ( cp lua.hpp "$SYSROOT/include/lua/" 2>/dev/null || cp ../etc/lua.hpp "$SYSROOT/include/lua/" )
 }
 
 mygui() {
