@@ -1,7 +1,7 @@
 # Minimal iOS toolchain for OpenMW configure (refined as the build matures).
 set(CMAKE_SYSTEM_NAME iOS)
 set(CMAKE_OSX_ARCHITECTURES arm64)
-set(CMAKE_OSX_DEPLOYMENT_TARGET 15.0)
+set(CMAKE_OSX_DEPLOYMENT_TARGET 17.0)
 set(CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH NO)
 # Static libs from our sysroot win over anything else.
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

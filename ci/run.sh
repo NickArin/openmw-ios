@@ -171,6 +171,49 @@ CMAKEEOF
   # margin for other libc++ availability gates; the only target device
   # is Arin's iPhone 17 Pro on current iOS, so nothing is lost.
   echo "- Round 15: raised iOS deployment target 15.0 -> 17.0 (std::format/to_chars requires iOS 16.3+)" >> results/summary.md
+  # Round 17 fixes (from the Nov 9 research addendum - local source census
+  # merged with the web deep-research report; addendum file:
+  # research-addendum-2026-11-09.md in the project workspace):
+  # (1) Run 16's first error: three engine TUs include the desktop-only
+  # <SDL_opengl_glext.h> unguarded; it assumes a desktop gl.h ran first
+  # (GLclampd does not exist in GLES3). Every token those files consume
+  # exists in <OpenGLES/ES3/glext.h>, so swap the include. This kills
+  # the class in all three files, two of which run 16 never reached.
+  for F in components/fx/technique.cpp components/debug/gldebug.cpp apps/openmw/mwrender/postprocessor.cpp; do
+    if grep -q "#include <SDL_opengl_glext.h>" "build/openmw/$F"; then
+      sed -i '' "s|#include <SDL_opengl_glext.h>|#include <OpenGLES/ES3/glext.h>|" "build/openmw/$F"
+      echo "- Round 17: swapped SDL_opengl_glext.h -> OpenGLES/ES3/glext.h in $F" >> results/summary.md
+    else
+      echo "- Round 17: WARNING SDL_opengl_glext.h include not found in $F" >> results/summary.md
+    fi
+  done
+  # (2) Pre-empt the crash catcher: components/crashcatcher/crashcatcher.cpp
+  # calls system()/fork()/execl(), all unavailable on iOS, and the component
+  # is included for every non-Android build via elseif(NOT ANDROID).
+  # Exclude iOS at that same seam.
+  COMP_CML="build/openmw/components/CMakeLists.txt"
+  if grep -q "^elseif(NOT ANDROID)$" "$COMP_CML"; then
+    sed -i '' 's/^elseif(NOT ANDROID)$/elseif(NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")/' "$COMP_CML"
+    echo "- Round 17: excluded crashcatcher component on iOS (system/fork/execl unavailable)" >> results/summary.md
+  else
+    echo "- Round 17: WARNING crashcatcher elseif(NOT ANDROID) line not found" >> results/summary.md
+  fi
+  # (3) Pre-empt the IOKit link failure (sibling of the round 14 Cocoa fix,
+  # same APPLE block in apps/openmw/CMakeLists.txt): IOKit.framework does
+  # not exist in the iPhone SDK and find_library does not fail at generate,
+  # it poisons the link. No engine source calls IOKit APIs (grep empty;
+  # SDL owns device input). Point the find at the private device-side
+  # spelling's public neighbour: drop it by reusing the UIKit result.
+  if grep -q "find_library(IOKIT_FRAMEWORK IOKit)" "$APP_CML"; then
+    sed -i '' "s/find_library(IOKIT_FRAMEWORK IOKit)/set(IOKIT_FRAMEWORK \"\")/" "$APP_CML"
+    echo "- Round 17: neutralized IOKit find_library in apps/openmw (no IOKit in iPhone SDK)" >> results/summary.md
+  else
+    echo "- Round 17: WARNING IOKit find_library line not found in apps/openmw/CMakeLists.txt" >> results/summary.md
+  fi
+  # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
+  # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
+  # signing machinery) must never enter this unsigned sideload build; the
+  # hand-rolled IPA step below is the packaging route.
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DOSG_BUILD_PLATFORM_IPHONE=ON \
