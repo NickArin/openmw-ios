@@ -21,13 +21,13 @@ build_dep() {
   else
     echo "- $name: FAIL ($((SECONDS-start))s)" >> "$RESULTS/summary.md"
     echo "--- errors from $name log:" >> "$RESULTS/summary.md"
-    grep -m 15 -iE "error:|CMake Error|FATAL|not found|NOTFOUND" "$ROOT/logs/$name.log" >> "$RESULTS/summary.md" || true
+    grep -B1 -A5 -m 8 -iE "CMake Error|error:" "$ROOT/logs/$name.log" >> "$RESULTS/summary.md" || true
     echo "--- tail of $name log:" >> "$RESULTS/summary.md"
     tail -20 "$ROOT/logs/$name.log" >> "$RESULTS/summary.md"
   fi
 }
 
-CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 cmake_dep() {
   local name="$1" src="$2"; shift 2
@@ -45,7 +45,8 @@ freetype() {
 
 libpng() {
   git clone --depth 1 https://github.com/pnggroup/libpng.git "$ROOT/build/libpng" &&
-  cmake_dep libpng "$ROOT/build/libpng" -DPNG_SHARED=OFF -DPNG_TESTS=OFF -DPNG_FRAMEWORK=OFF -DPNG_TOOLS=OFF
+  cmake_dep libpng "$ROOT/build/libpng" -DPNG_SHARED=OFF -DPNG_TESTS=OFF -DPNG_FRAMEWORK=OFF -DPNG_TOOLS=OFF &&
+  cp "$SYSROOT/include/libpng18/"*.h "$SYSROOT/include/" 2>/dev/null || true
 }
 
 libjpeg() {

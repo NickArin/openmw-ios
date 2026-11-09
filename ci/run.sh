@@ -20,11 +20,12 @@ bash deps/build-all.sh
 
 # ================= OpenMW engine =================
 echo "## OpenMW engine" >> results/summary.md
-CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git build/openmw > logs/clone-openmw.log 2>&1; then
   GEN="Unix Makefiles"; command -v ninja >/dev/null && GEN="Ninja"
-  echo "- generator: $GEN" >> results/summary.md
+  OPENAL_LIB="$(find "$SYSROOT" -iname "libopenal*.a" 2>/dev/null | head -1)"
+  echo "- generator: $GEN; openal lib: ${OPENAL_LIB:-NOT FOUND}" >> results/summary.md
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DCMAKE_INSTALL_PREFIX="$ROOT/install-openmw" \
@@ -43,6 +44,34 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DOPENGL_opengl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DLZ4_INCLUDE_DIR="$SYSROOT/include" \
       -DLZ4_LIBRARY="$SYSROOT/lib/liblz4.a" \
+      -DICU_INCLUDE_DIR="$SYSROOT/include" \
+      -DICU_UC_LIBRARY="$SYSROOT/lib/libicuuc.a" \
+      -DICU_I18N_LIBRARY="$SYSROOT/lib/libicui18n.a" \
+      -DICU_DATA_LIBRARY="$SYSROOT/lib/libicudata.a" \
+      -DBoost_DIR="$SYSROOT/lib/cmake/Boost-1.85.0" \
+      -DSDL2_DIR="$SYSROOT/lib/cmake/SDL2" \
+      -DLUA_INCLUDE_DIR="$SYSROOT/include/lua5.1" \
+      -DLUA_LIBRARY="$SYSROOT/lib/liblua.a" \
+      -DLUA_LIBRARIES="$SYSROOT/lib/liblua.a" \
+      -DFREETYPE_INCLUDE_DIR_freetype2="$SYSROOT/include/freetype2" \
+      -DFREETYPE_INCLUDE_DIR_ft2build="$SYSROOT/include/freetype2" \
+      -DFREETYPE_LIBRARY="$SYSROOT/lib/libfreetype.a" \
+      -DJPEG_INCLUDE_DIR="$SYSROOT/include" \
+      -DJPEG_LIBRARY="$SYSROOT/lib/libjpeg.a" \
+      -DPNG_INCLUDE_DIR="$SYSROOT/include/libpng18" \
+      -DPNG_LIBRARY="$SYSROOT/lib/libpng.a" \
+      -DFFmpeg_AVCODEC_INCLUDE_DIR="$SYSROOT/include" \
+      -DFFmpeg_AVCODEC_LIBRARY="$SYSROOT/lib/libavcodec.a" \
+      -DFFmpeg_AVFORMAT_INCLUDE_DIR="$SYSROOT/include" \
+      -DFFmpeg_AVFORMAT_LIBRARY="$SYSROOT/lib/libavformat.a" \
+      -DFFmpeg_AVUTIL_INCLUDE_DIR="$SYSROOT/include" \
+      -DFFmpeg_AVUTIL_LIBRARY="$SYSROOT/lib/libavutil.a" \
+      -DFFmpeg_SWSCALE_INCLUDE_DIR="$SYSROOT/include" \
+      -DFFmpeg_SWSCALE_LIBRARY="$SYSROOT/lib/libswscale.a" \
+      -DFFmpeg_SWRESAMPLE_INCLUDE_DIR="$SYSROOT/include" \
+      -DFFmpeg_SWRESAMPLE_LIBRARY="$SYSROOT/lib/libswresample.a" \
+      -DOPENAL_INCLUDE_DIR="$SYSROOT/include" \
+      -DOPENAL_LIBRARY="$OPENAL_LIB" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
       > logs/engine-configure.log 2>&1; then
