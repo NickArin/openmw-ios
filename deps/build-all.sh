@@ -199,8 +199,20 @@ CMAKEEOF
 }
 
 lua51() {
+  # Round 10 fix: Run 9 died here - www.lua.org did not accept a connection
+  # from the runner for 75s (curl 28), so liblua.a and the lua5.1 headers
+  # never landed and engine configure then failed with
+  # "Could NOT find Lua (missing: LUA_INCLUDE_DIR)". lua.org is
+  # intermittently slow from the runners (Run 8 took 70s for this same
+  # download; Runs 5-7 took 3-8s). Retry lua.org with a bounded connect
+  # timeout, then fall back to the Debian orig tarball, which is
+  # byte-identical to the lua.org tarball (md5
+  # 2e115fe26e435e33b0d5c022e4490567, the published lua-5.1.5.tar.gz md5,
+  # verified locally Nov 9) and extracts to the same lua-5.1.5/src layout,
+  # so nothing downstream changes.
   cd "$ROOT/build" &&
-  curl -L -o lua.tar.gz https://www.lua.org/ftp/lua-5.1.5.tar.gz &&
+  { curl -fL --retry 2 --retry-all-errors --connect-timeout 30 --max-time 240 -o lua.tar.gz https://www.lua.org/ftp/lua-5.1.5.tar.gz ||
+    curl -fL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 240 -o lua.tar.gz https://deb.debian.org/debian/pool/main/l/lua5.1/lua5.1_5.1.5.orig.tar.gz; } &&
   tar xzf lua.tar.gz &&
   cd lua-5.1.5/src &&
   sed -i.bak 's/system(luaL_optstring(L, 1, NULL))/0/' loslib.c &&
