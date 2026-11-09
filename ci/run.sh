@@ -218,6 +218,14 @@ CMAKEEOF
   # glVertexPointer/glColorPointer/glTexCoordPointer - none of which exist
   # in OpenGL ES 3 (fixed function was removed in ES 2). Verified locally:
   # this file is the ONLY engine source using that API.
+  # Round 19 fix: Run 18 got past the fixed-function names but failed at
+  # myguirendermanager.cpp:139/141 with "arithmetic on a pointer to void":
+  # the Round 18 replacement did vbo->getArray(0)->getDataPointer() + 12/16
+  # directly, and getDataPointer() returns a void pointer (arithmetic on
+  # void* is ill-formed in C++). The original code cast to const char*
+  # before adding the offset; the Round 19 replacement below restores
+  # that cast (char* arithmetic, then cast back to const void* for
+  # glVertexAttribPointer).
   # Replacement: the generic vertex-attribute API at OSG's conventional
   # attribute locations, which is exactly what the gui shader consumes
   # (files/shaders/core/gui.*: location 0 = Position, 3 = Color,
@@ -254,9 +262,9 @@ reps = [
  """                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex),
                         vbo->getArray(0)->getDataPointer());
                     glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(MyGUI::Vertex),
-                        vbo->getArray(0)->getDataPointer() + 12);
+                        reinterpret_cast<const void*>(reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 12));
                     glVertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex),
-                        vbo->getArray(0)->getDataPointer() + 16);"""),
+                        reinterpret_cast<const void*>(reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 16));"""),
 ("""            glDisableClientState(GL_VERTEX_ARRAY);
             glDisableClientState(GL_TEXTURE_COORD_ARRAY);
             glDisableClientState(GL_COLOR_ARRAY);""",
@@ -278,6 +286,7 @@ print("mygui render manager patched to GLES3 generic vertex attributes")
 PYEOF
   then
     echo "- Round 18: patched myguirendermanager.cpp fixed-function client arrays -> GLES3 generic vertex attributes (locations 0/3/8)" >> results/summary.md
+    echo "- Round 19: fixed void-pointer arithmetic in that patch (cast data pointer to const char* before +12/+16 offsets)" >> results/summary.md
   else
     echo "- Round 18: WARNING myguirendermanager.cpp patch failed (pattern mismatch)" >> results/summary.md
   fi
