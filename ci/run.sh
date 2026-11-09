@@ -129,6 +129,32 @@ CMAKEEOF
   else
     echo "- Round 13: WARNING osgdb_dae line not found in cloned CMakeLists.txt" >> results/summary.md
   fi
+  # Round 14 fix: Run 13 cleared every dep and Configuring finished, then
+  # the GENERATE step failed: COCOA_FRAMEWORK is NOTFOUND, linked by
+  # target "openmw" (apps/openmw/CMakeLists.txt). That APPLE block does
+  # find_library(COCOA_FRAMEWORK Cocoa) - Cocoa is the macOS umbrella
+  # framework and does not exist in the iPhone SDK (IOKit in the same
+  # block WAS found, so only Cocoa failed). Nothing in apps/openmw or
+  # components uses Cocoa APIs (grep is empty); SDL owns the iOS window.
+  # The iOS umbrella equivalent is UIKit, so point that find_library at
+  # UIKit in the cloned tree. Same block, same problem: its FFmpeg
+  # target_link_options list ends with -framework
+  # VideoDecodeAcceleration, a macOS-only legacy framework absent on
+  # iOS, which would fail the link next even after the generate fix.
+  # The sysroot FFmpeg was built with videotoolbox/audiotoolbox
+  # disabled, so no decoder acceleration framework is actually needed;
+  # swap that token for CoreFoundation (exists on iOS, keeps the
+  # command's closing syntax intact). The other four frameworks in the
+  # list (CoreVideo, CoreMedia, VideoToolbox, AudioToolbox) all exist
+  # in the iPhone SDK.
+  APP_CML="build/openmw/apps/openmw/CMakeLists.txt"
+  if grep -q "find_library(COCOA_FRAMEWORK Cocoa)" "$APP_CML" && grep -q "VideoDecodeAcceleration" "$APP_CML"; then
+    sed -i '' "s/find_library(COCOA_FRAMEWORK Cocoa)/find_library(COCOA_FRAMEWORK UIKit)/" "$APP_CML"
+    sed -i '' "s/VideoDecodeAcceleration/CoreFoundation/" "$APP_CML"
+    echo "- Round 14: patched apps/openmw Cocoa->UIKit and VideoDecodeAcceleration->CoreFoundation (macOS-only frameworks absent on iOS)" >> results/summary.md
+  else
+    echo "- Round 14: WARNING expected Cocoa/VideoDecodeAcceleration lines not found in cloned apps/openmw/CMakeLists.txt" >> results/summary.md
+  fi
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DOSG_BUILD_PLATFORM_IPHONE=ON \
