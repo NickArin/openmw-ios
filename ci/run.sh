@@ -32,6 +32,15 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DBUILD_MWINIIMPORTER=OFF -DBUILD_ESSIMPORTER=OFF -DBUILD_NAVMESHTOOL=OFF \
       -DBUILD_BSATOOL=OFF -DBUILD_BULLETOBJECTTOOL=OFF \
       -DUSE_LUAJIT=OFF \
+      -DOPENMW_USE_SYSTEM_MYGUI=OFF \
+      -DOPENMW_USE_SYSTEM_OSG=OFF \
+      -DOPENMW_USE_SYSTEM_BULLET=OFF \
+      -DOPENMW_USE_SYSTEM_YAML_CPP=OFF \
+      -DOPENMW_USE_SYSTEM_SQLITE3=OFF \
+      -DOPENGL_PROFILE=GLES3 \
+      -DOPENGL_INCLUDE_DIR="$SDK/System/Library/Frameworks/OpenGLES.framework/Headers" \
+      -DOPENGL_gl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
+      -DOPENGL_opengl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
       > logs/engine-configure.log 2>&1; then

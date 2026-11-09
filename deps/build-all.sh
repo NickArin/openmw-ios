@@ -20,8 +20,10 @@ build_dep() {
     echo "- $name: OK ($((SECONDS-start))s)" >> "$RESULTS/summary.md"
   else
     echo "- $name: FAIL ($((SECONDS-start))s)" >> "$RESULTS/summary.md"
+    echo "--- errors from $name log:" >> "$RESULTS/summary.md"
+    grep -m 15 -iE "error:|CMake Error|FATAL|not found|NOTFOUND" "$ROOT/logs/$name.log" >> "$RESULTS/summary.md" || true
     echo "--- tail of $name log:" >> "$RESULTS/summary.md"
-    tail -30 "$ROOT/logs/$name.log" >> "$RESULTS/summary.md"
+    tail -20 "$ROOT/logs/$name.log" >> "$RESULTS/summary.md"
   fi
 }
 
@@ -36,9 +38,9 @@ cmake_dep() {
 
 # ---------- media / support libs OSG needs ----------
 freetype() {
-  curl -L -o "$ROOT/build/ft.tar.gz" https://gitlab.freedesktop.org/freetype/freetype/-/archive/FT-2-13-2/freetype-FT-2-13-2.tar.gz &&
+  curl -L -o "$ROOT/build/ft.tar.gz" https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-2.tar.gz &&
   tar xzf "$ROOT/build/ft.tar.gz" -C "$ROOT/build" &&
-  cmake_dep freetype "$ROOT/build/freetype-FT-2-13-2" -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON -DBUILD_SHARED_LIBS=OFF
+  cmake_dep freetype "$ROOT/build/freetype-VER-2-13-2" -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON -DBUILD_SHARED_LIBS=OFF
 }
 
 libpng() {
@@ -69,18 +71,27 @@ osg() {
 }
 
 icu() {
+  # Recipe: research notes SS3 - ICU 70.1 (the version OpenMW 0.51 pins).
+  # Host build (native, tools ENABLED - the cross build runs them) in-source,
+  # then a separate cross build dir with --with-cross-build=<host source dir>.
   cd "$ROOT/build" &&
-  curl -L -o icu.tgz https://github.com/unicode-org/icu/releases/download/release-75-1/icu4c-75_1-src.tgz &&
-  tar xzf icu.tgz &&
-  mkdir -p icu-host icu-cross &&
-  cd icu-host &&
-  ../icu/source/runConfigureICU MacOSX --prefix="$ROOT/build/icu-host-install" &&
+  curl -L -o icu.zip https://github.com/unicode-org/icu/archive/refs/tags/release-70-1.zip &&
+  unzip -q icu.zip &&
+  curl -L -o icufilters.json https://raw.githubusercontent.com/OpenMW/openmw/openmw-51/extern/icufilters.json &&
+  cd icu-release-70-1/icu4c/source &&
+  ./configure --disable-tests --disable-samples --disable-icuio --disable-extras &&
   make -j"$JOBS" &&
-  cd ../icu-cross &&
-  env CC="$(xcrun -sdk iphoneos -f clang) -arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
-      CXX="$(xcrun -sdk iphoneos -f clang++) -arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
-      ../icu/source/configure --host=arm-apple-darwin --with-cross-build="$ROOT/build/icu-host" \
-      --enable-static --disable-shared --disable-samples --disable-tests --prefix="$SYSROOT" &&
+  cd "$ROOT/build" && mkdir -p icu-cross && cd icu-cross &&
+  env CC="clang -target arm64-apple-ios15.0 -isysroot $SDK" \
+      CXX="clang++ -target arm64-apple-ios15.0 -isysroot $SDK" \
+      AR="$(xcrun -sdk iphoneos -find ar)" RANLIB="$(xcrun -sdk iphoneos -find ranlib)" \
+      ICU_DATA_FILTER_FILE="$ROOT/build/icufilters.json" \
+      "$ROOT/build/icu-release-70-1/icu4c/source/configure" \
+      --host=aarch64-apple-darwin \
+      --with-cross-build="$ROOT/build/icu-release-70-1/icu4c/source" \
+      --enable-static --disable-shared \
+      --disable-tests --disable-samples --disable-icuio --disable-extras --disable-tools \
+      --prefix="$SYSROOT" &&
   make -j"$JOBS" &&
   make install
 }
@@ -117,7 +128,7 @@ lz4() {
 
 bullet() {
   git clone --depth 1 --branch 3.25 https://github.com/bulletphysics/bullet3.git "$ROOT/build/bullet" &&
-  cmake_dep Bullet "$ROOT/build/bullet" -DBUILD_UNIT_TESTS=OFF -DBUILD_BULLET2_DEMOS=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_EXTRAS=OFF -DBUILD_OPENGL3_DEMOS=OFF -DINSTALL_LIBS=ON -DBUILD_SHARED_LIBS=OFF
+  cmake_dep Bullet "$ROOT/build/bullet" -DBUILD_UNIT_TESTS=OFF -DBUILD_BULLET2_DEMOS=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_EXTRAS=OFF -DBUILD_OPENGL3_DEMOS=OFF -DINSTALL_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DUSE_DOUBLE_PRECISION=ON
 }
 
 yamlcpp() {
@@ -126,14 +137,24 @@ yamlcpp() {
 }
 
 boost() {
+  # Real Boost.Build route: OpenMW 0.51 does find_package(Boost CONFIG REQUIRED
+  # COMPONENTS iostreams program_options) - it needs proper CMake config files,
+  # which only a b2 install generates. (Research notes SS0/SS2.1.)
   cd "$ROOT/build" &&
   curl -L -o boost.tar.bz2 https://archives.boost.org/release/1.85.0/source/boost_1_85_0.tar.bz2 &&
   tar xjf boost.tar.bz2 &&
-  cp -R boost_1_85_0/boost "$SYSROOT/include/" &&
-  cd boost_1_85_0/libs/iostreams/src &&
-  clang++ -std=c++17 -arch arm64 -isysroot "$SDK" -miphoneos-version-min=15.0 -I"$ROOT/build/boost_1_85_0" \
-    -c file_descriptor.cpp mapped_file.cpp zlib.cpp gzip.cpp &&
-  ar rcs "$SYSROOT/lib/libboost_iostreams.a" ./*.o
+  cd boost_1_85_0 &&
+  ./bootstrap.sh &&
+  cat > "$ROOT/build/user-config.jam" <<JAM
+using clang : ios : /usr/bin/clang++ : <archiver>/usr/bin/ar <ranlib>/usr/bin/ranlib ;
+JAM
+  HOME="$ROOT/build" ./b2 -j"$JOBS" --user-config="$ROOT/build/user-config.jam" \
+    toolset=clang-ios target-os=iphone architecture=arm address-model=64 \
+    variant=release threading=multi link=static runtime-link=static \
+    cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
+    cxxflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0 -std=c++17" \
+    linkflags="-arch arm64 -isysroot $SDK" \
+    --with-iostreams --with-program_options --prefix="$SYSROOT" install
 }
 
 lua51() {
@@ -141,6 +162,7 @@ lua51() {
   curl -L -o lua.tar.gz https://www.lua.org/ftp/lua-5.1.5.tar.gz &&
   tar xzf lua.tar.gz &&
   cd lua-5.1.5/src &&
+  sed -i.bak 's/system(luaL_optstring(L, 1, NULL))/0/' loslib.c &&
   for f in ./*.c; do
     case "$f" in ./lua.c|./luac.c|./print.c) ;; *)
       clang -O2 -arch arm64 -isysroot "$SDK" -miphoneos-version-min=15.0 -DLUA_USE_POSIX -c "$f" || return 1 ;;
@@ -163,20 +185,30 @@ openal() {
   cmake_dep OpenAL "$ROOT/build/openal" -DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF -DALSOFT_TESTS=OFF -DBUILD_SHARED_LIBS=OFF
 }
 
+shims() {
+  # GLES header shims: the OSG fork's GLES3 profile includes <GLES3/gl3.h>;
+  # iOS names it <OpenGLES/ES3/gl.h>. Provide forwarding headers in the sysroot.
+  mkdir -p "$SYSROOT/include/GLES3" "$SYSROOT/include/GLES2"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/include/GLES3/gl3.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/glext.h>\n' > "$SYSROOT/include/GLES3/gl3ext.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/include/GLES3/gl32.h"
+  printf '#pragma once\n#include <OpenGLES/ES2/gl.h>\n' > "$SYSROOT/include/GLES2/gl2.h"
+  printf '#pragma once\n#include <OpenGLES/ES2/glext.h>\n' > "$SYSROOT/include/GLES2/gl2ext.h"
+}
+
 echo "## All deps (hardest first)" >> "$RESULTS/summary.md"
+build_dep Shims shims
 build_dep FreeType freetype
 build_dep libpng libpng
 build_dep libjpeg libjpeg
-build_dep OSG osg
 build_dep ICU icu
 build_dep FFmpeg ffmpeg
 build_dep SDL2 sdl2
 build_dep LZ4 lz4
-build_dep Bullet bullet
-build_dep yaml-cpp yamlcpp
 build_dep Boost boost
 build_dep Lua51 lua51
-build_dep MyGUI mygui
+# OSG, Bullet, yaml-cpp, MyGUI, SQLite3, Recast: built by the engine's own
+# extern FetchContent (upstream-pinned recipes) - see ci/run.sh USE_SYSTEM flags.
 build_dep OpenAL openal
 du -sh "$SYSROOT" >> "$RESULTS/summary.md"
 echo "build-all done"
