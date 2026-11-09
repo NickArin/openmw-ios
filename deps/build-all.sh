@@ -27,7 +27,11 @@ build_dep() {
   fi
 }
 
-CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+# Round 15: deployment target raised 15.0 -> 17.0 everywhere in this file
+# (and in ci/run.sh). Run 14's engine build failed on libc++ std::format /
+# floating-point std::to_chars, which Apple marks unavailable below
+# iOS 16.3; OpenMW 0.51 uses std::format in 36 source files.
+CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 cmake_dep() {
   local name="$1" src="$2"; shift 2
@@ -83,8 +87,8 @@ icu() {
   ./configure --disable-tests --disable-samples --disable-icuio --disable-extras &&
   make -j"$JOBS" &&
   cd "$ROOT/build" && mkdir -p icu-cross && cd icu-cross &&
-  env CC="clang -target arm64-apple-ios15.0 -isysroot $SDK" \
-      CXX="clang++ -target arm64-apple-ios15.0 -isysroot $SDK" \
+  env CC="clang -target arm64-apple-ios17.0 -isysroot $SDK" \
+      CXX="clang++ -target arm64-apple-ios17.0 -isysroot $SDK" \
       AR="$(xcrun -sdk iphoneos -find ar)" RANLIB="$(xcrun -sdk iphoneos -find ranlib)" \
       ICU_DATA_FILTER_FILE="$ROOT/build/icufilters.json" \
       "$ROOT/build/icu-release-70-1/icu4c/source/configure" \
@@ -116,8 +120,8 @@ ffmpeg() {
   cd "$FFMPEG_SRCDIR" &&
   ./configure --prefix="$SYSROOT" --enable-cross-compile --target-os=darwin --arch=arm64 \
     --cc="clang" --cxx="clang++" \
-    --extra-cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
-    --extra-cxxflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
+    --extra-cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0" \
+    --extra-cxxflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0" \
     --extra-ldflags="-arch arm64 -isysroot $SDK" \
     --sysroot="$SDK" \
     --disable-programs --disable-doc --disable-debug --disable-network \
@@ -164,8 +168,8 @@ JAM
   HOME="$ROOT/build" ./b2 -j"$JOBS" --user-config="$ROOT/build/user-config.jam" \
     toolset=clang-ios target-os=iphone architecture=arm address-model=64 \
     variant=release threading=multi link=static runtime-link=static \
-    cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0" \
-    cxxflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0 -std=c++17" \
+    cflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0" \
+    cxxflags="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0 -std=c++17" \
     linkflags="-arch arm64 -isysroot $SDK" \
     --with-iostreams --with-program_options --prefix="$SYSROOT" install &&
   {
@@ -230,7 +234,7 @@ lua51() {
   sed -i.bak 's/system(luaL_optstring(L, 1, NULL))/0/' loslib.c &&
   for f in ./*.c; do
     case "$f" in ./lua.c|./luac.c|./print.c) ;; *)
-      clang -O2 -arch arm64 -isysroot "$SDK" -miphoneos-version-min=15.0 -DLUA_USE_POSIX -c "$f" || return 1 ;;
+      clang -O2 -arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 -DLUA_USE_POSIX -c "$f" || return 1 ;;
     esac
   done &&
   ar rcs "$SYSROOT/lib/liblua.a" ./*.o &&

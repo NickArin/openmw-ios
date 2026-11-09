@@ -20,7 +20,7 @@ bash deps/build-all.sh
 
 # ================= OpenMW engine =================
 echo "## OpenMW engine" >> results/summary.md
-CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git build/openmw > logs/clone-openmw.log 2>&1; then
   GEN="Unix Makefiles"; command -v ninja >/dev/null && GEN="Ninja"
@@ -155,11 +155,26 @@ CMAKEEOF
   else
     echo "- Round 14: WARNING expected Cocoa/VideoDecodeAcceleration lines not found in cloned apps/openmw/CMakeLists.txt" >> results/summary.md
   fi
+  # Round 15 fix: Run 14 was the first run to clear every dep AND engine
+  # configure, then the engine build died in libc++
+  # __format/formatter_floating_point.h: 'to_chars' is unavailable:
+  # introduced in iOS 16.3. Verified in the local 0.51 source: 36 files
+  # include <format> and use std::format (components/bgsm, components/bsa,
+  # ...), and Apple libc++ marks std::format and the floating-point
+  # std::to_chars unavailable below iOS 16.3. The whole pipeline pinned
+  # the deployment target to 15.0, so every one of those translation
+  # units was unbuildable. Raise it to 17.0 in the CMAKE_IOS flags above
+  # (which the FetchContent extern builds - OSG, MyGUI, Bullet,
+  # yaml-cpp - inherit), in IPHONE_VERSION_MIN here, and everywhere in
+  # deps/build-all.sh. 17.0 rather than the bare 16.3 minimum gives
+  # margin for other libc++ availability gates; the only target device
+  # is Arin's iPhone 17 Pro on current iOS, so nothing is lost.
+  echo "- Round 15: raised iOS deployment target 15.0 -> 17.0 (std::format/to_chars requires iOS 16.3+)" >> results/summary.md
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DOSG_BUILD_PLATFORM_IPHONE=ON \
       -DIPHONE_SDKVER="$SDK_VER" \
-      -DIPHONE_VERSION_MIN=15.0 \
+      -DIPHONE_VERSION_MIN=17.0 \
       -DOSG_WINDOWING_SYSTEM=IOS \
       -DCMAKE_FRAMEWORK_PATH="$SYSROOT/frameworks" \
       -DRUN_RESULT_VAR=0 \
