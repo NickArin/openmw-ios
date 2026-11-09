@@ -68,8 +68,17 @@ CMAKEEOF
   # Boost_USE_STATIC_LIBS / Boost_USE_STATIC_RUNTIME match the b2 build
   # (link=static runtime-link=static in deps/build-all.sh) so the
   # b2-generated variant files are not rejected as unsuitable.
+  # Round 10 fix: Run 10 cleared every dep (Lua51 and OpenAL included) and
+  # engine configure then died in cmake/CheckLuaCustomAllocator.cmake -
+  # try_run() cannot run an iOS binary on the macOS runner in
+  # cross-compiling mode, and CMake errors unless the run-result cache
+  # variable is preset. That file literally names its result variable
+  # RUN_RESULT_VAR. Preset it to 0: plain Lua 5.1 lua_newstate() takes a
+  # custom lua_Alloc by design (that is its core API), so 0 (success) is
+  # the truthful result; the compile half of try_run still runs for real.
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
+      -DRUN_RESULT_VAR=0 \
       -DCMAKE_INSTALL_PREFIX="$ROOT/install-openmw" \
       -DBUILD_OPENMW=ON -DBUILD_LAUNCHER=OFF -DBUILD_WIZARD=OFF -DBUILD_OPENCS=OFF \
       -DBUILD_MWINIIMPORTER=OFF -DBUILD_ESSIMPORTER=OFF -DBUILD_NAVMESHTOOL=OFF \
