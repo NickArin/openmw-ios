@@ -21,7 +21,7 @@ build_dep() {
   else
     echo "- $name: FAIL ($((SECONDS-start))s)" >> "$RESULTS/summary.md"
     echo "--- errors from $name log:" >> "$RESULTS/summary.md"
-    grep -B1 -A5 -m 8 -iE "CMake Error|error:" "$ROOT/logs/$name.log" >> "$RESULTS/summary.md" || true
+    grep -B1 -A5 -m 8 -iE "CMake Error|error:|Error opening|failed|FATAL" "$ROOT/logs/$name.log" >> "$RESULTS/summary.md" || true
     echo "--- tail of $name log:" >> "$RESULTS/summary.md"
     tail -20 "$ROOT/logs/$name.log" >> "$RESULTS/summary.md"
   fi
@@ -50,9 +50,8 @@ libpng() {
 }
 
 libjpeg() {
-  curl -L -o "$ROOT/build/jpeg.tar.gz" https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.3/libjpeg-turbo-3.0.3.tar.gz &&
-  tar xzf "$ROOT/build/jpeg.tar.gz" -C "$ROOT/build" &&
-  cmake_dep libjpeg "$ROOT/build/libjpeg-turbo-3.0.3" -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=OFF
+  git clone --depth 1 --branch 3.0.3 https://github.com/libjpeg-turbo/libjpeg-turbo.git "$ROOT/build/libjpeg" &&
+  cmake_dep libjpeg "$ROOT/build/libjpeg" -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=OFF
 }
 
 # ---------- the big three ----------

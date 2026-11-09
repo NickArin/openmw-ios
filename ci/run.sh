@@ -24,7 +24,8 @@ CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_SY
 
 if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git build/openmw > logs/clone-openmw.log 2>&1; then
   GEN="Unix Makefiles"; command -v ninja >/dev/null && GEN="Ninja"
-  OPENAL_LIB="$(find "$SYSROOT" -iname "libopenal*.a" 2>/dev/null | head -1)"
+  OPENAL_LIB="$(find "$SYSROOT" -iname "libopenal*" \( -name "*.a" -o -name "*.dylib" \) 2>/dev/null | head -1)"
+  [ -z "$OPENAL_LIB" ] && OPENAL_LIB="$(find "$SYSROOT" -iname "OpenAL.framework" -type d 2>/dev/null | head -1)"
   echo "- generator: $GEN; openal lib: ${OPENAL_LIB:-NOT FOUND}" >> results/summary.md
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
@@ -48,6 +49,9 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DICU_UC_LIBRARY="$SYSROOT/lib/libicuuc.a" \
       -DICU_I18N_LIBRARY="$SYSROOT/lib/libicui18n.a" \
       -DICU_DATA_LIBRARY="$SYSROOT/lib/libicudata.a" \
+      -DICU_UC_LIBRARY_RELEASE="$SYSROOT/lib/libicuuc.a" \
+      -DICU_I18N_LIBRARY_RELEASE="$SYSROOT/lib/libicui18n.a" \
+      -DICU_DATA_LIBRARY_RELEASE="$SYSROOT/lib/libicudata.a" \
       -DBoost_DIR="$SYSROOT/lib/cmake/Boost-1.85.0" \
       -DSDL2_DIR="$SYSROOT/lib/cmake/SDL2" \
       -DLUA_INCLUDE_DIR="$SYSROOT/include/lua5.1" \
@@ -56,10 +60,12 @@ if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git b
       -DFREETYPE_INCLUDE_DIR_freetype2="$SYSROOT/include/freetype2" \
       -DFREETYPE_INCLUDE_DIR_ft2build="$SYSROOT/include/freetype2" \
       -DFREETYPE_LIBRARY="$SYSROOT/lib/libfreetype.a" \
+      -DFREETYPE_LIBRARY_RELEASE="$SYSROOT/lib/libfreetype.a" \
       -DJPEG_INCLUDE_DIR="$SYSROOT/include" \
       -DJPEG_LIBRARY="$SYSROOT/lib/libjpeg.a" \
       -DPNG_INCLUDE_DIR="$SYSROOT/include/libpng18" \
       -DPNG_LIBRARY="$SYSROOT/lib/libpng.a" \
+      -DPNG_LIBRARY_RELEASE="$SYSROOT/lib/libpng.a" \
       -DFFmpeg_AVCODEC_INCLUDE_DIR="$SYSROOT/include" \
       -DFFmpeg_AVCODEC_LIBRARY="$SYSROOT/lib/libavcodec.a" \
       -DFFmpeg_AVFORMAT_INCLUDE_DIR="$SYSROOT/include" \
@@ -127,6 +133,7 @@ else
   echo "- IPA: not packaged (no engine binary)" >> results/summary.md
 fi
 
-find "$SYSROOT" \( -name "*.a" -o -name "*.ipa" \) | sort >> results/libs.txt || true
+find "$SYSROOT" \( -name "*.a" -o -name "*.ipa" -o -name "*.dylib" \) | sort >> results/libs.txt || true
+{ echo "--- openal inventory:"; find "$SYSROOT" -iname "*openal*" | sort; echo "--- frameworks:"; find "$SYSROOT" -name "*.framework" | sort; } >> results/libs.txt || true
 du -sh "$SYSROOT" >> results/summary.md
 echo "run.sh done"
