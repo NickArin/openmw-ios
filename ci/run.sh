@@ -1,4 +1,5 @@
 #!/bin/bash
+# retrigger: run 15's first workflow died before posting results (07:20 PST notice, no issue) - nudge commit 2026-11-09 per Arin
 # CI stage runner (called by the thin workflow). FULL pipeline: all deps -> engine -> unsigned IPA.
 # Writes results/summary.md + results/libs.txt for the workflow to publish as an issue.
 set -u
