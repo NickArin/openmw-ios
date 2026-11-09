@@ -20,7 +20,7 @@ bash deps/build-all.sh
 
 # ================= OpenMW engine =================
 echo "## OpenMW engine" >> results/summary.md
-CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT")
+CMAKE_IOS=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$SYSROOT" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 if git clone --depth 1 --branch openmw-51 https://github.com/OpenMW/openmw.git build/openmw > logs/clone-openmw.log 2>&1; then
   GEN="Unix Makefiles"; command -v ninja >/dev/null && GEN="Ninja"
