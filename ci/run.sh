@@ -55,6 +55,19 @@ endif()
 CMAKEEOF
     echo "- boost_headers config: generated fallback in ci/run.sh" >> results/summary.md
   fi
+  # Round 9 fix: Run 7 failed on boost_headers and Run 8 on boost_iostreams
+  # with the same signature - BoostConfig.cmake's nested
+  # find_package(boost_<comp> ... HINTS <sysroot>/lib/cmake) cannot discover
+  # component config packages under the iOS find-root rules, even though the
+  # files exist in the sysroot (Run 8 inventory lists them). The one
+  # component that passed in Run 8, boost_headers, is the one whose _DIR was
+  # seeded below. Seed every remaining component OpenMW requests
+  # (iostreams, program_options; their only Boost dependency is headers,
+  # already seeded) and set CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH so any
+  # nested config search also sees the real sysroot paths.
+  # Boost_USE_STATIC_LIBS / Boost_USE_STATIC_RUNTIME match the b2 build
+  # (link=static runtime-link=static in deps/build-all.sh) so the
+  # b2-generated variant files are not rejected as unsuitable.
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
       -DCMAKE_INSTALL_PREFIX="$ROOT/install-openmw" \
@@ -82,6 +95,11 @@ CMAKEEOF
       -DICU_DATA_LIBRARY_RELEASE="$SYSROOT/lib/libicudata.a" \
       -DBoost_DIR="$SYSROOT/lib/cmake/Boost-1.85.0" \
       -Dboost_headers_DIR="$SYSROOT/lib/cmake/boost_headers-1.85.0" \
+      -Dboost_iostreams_DIR="$SYSROOT/lib/cmake/boost_iostreams-1.85.0" \
+      -Dboost_program_options_DIR="$SYSROOT/lib/cmake/boost_program_options-1.85.0" \
+      -DBoost_USE_STATIC_LIBS=ON \
+      -DBoost_USE_STATIC_RUNTIME=ON \
+      -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
       -DSDL2_DIR="$SYSROOT/lib/cmake/SDL2" \
       -DLUA_INCLUDE_DIR="$SYSROOT/include/lua5.1" \
       -DLUA_LIBRARY="$SYSROOT/lib/liblua.a" \
