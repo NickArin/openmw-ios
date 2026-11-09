@@ -290,6 +290,43 @@ PYEOF
   else
     echo "- Round 18: WARNING myguirendermanager.cpp patch failed (pattern mismatch)" >> results/summary.md
   fi
+  # Round 20 fix: Run 19 cleared every dep and engine configure (832s of
+  # build), then failed in apps/openmw/mwrender/sky.cpp:
+  # GL_CLIP_PLANE0 (line 275) and GL_FOG (line 367) are undeclared.
+  # Both are desktop fixed-function modes removed in OpenGL ES 3:
+  # there is no fixed-function clip plane or fog state to disable.
+  # Verified locally: these are the ONLY two engine uses of those
+  # tokens, both are setMode(..., OFF) on the sky early-render root,
+  # and OpenMW fog/clipping are shader-based (other files note
+  # "shaders don't respect glDisable(GL_FOG)"). Dropping the two
+  # calls is the truthful GLES3 translation; no replacement state
+  # is needed.
+  SKY_CPP="build/openmw/apps/openmw/mwrender/sky.cpp"
+  if python3 - "$SKY_CPP" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+reps = [
+("        mEarlyRenderBinRoot->getOrCreateStateSet()->setMode(GL_CLIP_PLANE0, osg::StateAttribute::OFF);\n", ""),
+("        mEarlyRenderBinRoot->getOrCreateStateSet()->setMode(GL_FOG, osg::StateAttribute::OFF);\n", ""),
+]
+for old, new in reps:
+    if src.count(old) != 1:
+        print("PATTERN NOT FOUND OR NOT UNIQUE: " + old.strip())
+        sys.exit(1)
+    src = src.replace(old, new)
+for legacy in ("GL_CLIP_PLANE0", "GL_FOG"):
+    if legacy in src:
+        print("LEGACY TOKEN REMAINS: " + legacy)
+        sys.exit(1)
+open(path, "w").write(src)
+print("sky.cpp patched: removed GL_CLIP_PLANE0 and GL_FOG setMode calls")
+PYEOF
+  then
+    echo "- Round 20: removed GL_CLIP_PLANE0 and GL_FOG setMode calls from sky.cpp (fixed-function modes absent in GLES3, fog/clipping are shader-based)" >> results/summary.md
+  else
+    echo "- Round 20: WARNING sky.cpp patch failed (pattern mismatch)" >> results/summary.md
+  fi
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
