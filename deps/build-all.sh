@@ -249,6 +249,43 @@ shims() {
   printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/include/GLES3/gl32.h"
   printf '#pragma once\n#include <OpenGLES/ES2/gl.h>\n' > "$SYSROOT/include/GLES2/gl2.h"
   printf '#pragma once\n#include <OpenGLES/ES2/glext.h>\n' > "$SYSROOT/include/GLES2/gl2ext.h"
+  # Round 12 fix: Run 11 engine configure died on OpenGL. There is no
+  # OpenGL.framework in the iPhone SDK (only OpenGLES.framework), so
+  # find_package(OpenGL REQUIRED) in OpenMW's top level cannot succeed
+  # from the SDK, and OSG's non-iPhone branch UNSETs the seeded
+  # OPENGL_gl_LIBRARY / OPENGL_INCLUDE_DIR cache vars and re-searches,
+  # failing again (its feature_summary lists OpenGL as REQUIRED not
+  # found). Provide a real shim OpenGL.framework in the sysroot whose
+  # headers forward to OpenGLES ES3 and whose binary is a copy of the
+  # SDK's OpenGLES stub/binary (its install name already points at the
+  # real OpenGLES.framework, so linking the shim links OpenGLES), plus
+  # a plain OpenGL/gl.h header tree under include/ so find_path for
+  # OpenGL/gl.h also succeeds outside framework-only search.
+  mkdir -p "$SYSROOT/include/OpenGL" "$SYSROOT/frameworks/OpenGL.framework/Headers"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/include/OpenGL/gl.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/include/OpenGL/gl3.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/frameworks/OpenGL.framework/Headers/gl.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/gl.h>\n' > "$SYSROOT/frameworks/OpenGL.framework/Headers/gl3.h"
+  printf '#pragma once\n#include <OpenGLES/ES3/glext.h>\n' > "$SYSROOT/frameworks/OpenGL.framework/Headers/glext.h"
+  GLES_FW="$SDK/System/Library/Frameworks/OpenGLES.framework"
+  if [ -e "$GLES_FW/OpenGLES" ]; then
+    cp -Lf "$GLES_FW/OpenGLES" "$SYSROOT/frameworks/OpenGL.framework/OpenGL" || true
+  elif [ -e "$GLES_FW/OpenGLES.tbd" ]; then
+    cp -Lf "$GLES_FW/OpenGLES.tbd" "$SYSROOT/frameworks/OpenGL.framework/OpenGL" || true
+  fi
+  cat > "$SYSROOT/frameworks/OpenGL.framework/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>OpenGL</string>
+  <key>CFBundleIdentifier</key><string>com.apple.OpenGL</string>
+  <key>CFBundleName</key><string>OpenGL</string>
+  <key>CFBundlePackageType</key><string>FMWK</string>
+</dict>
+</plist>
+PLIST
+  true
 }
 
 echo "## All deps (hardest first)" >> "$RESULTS/summary.md"

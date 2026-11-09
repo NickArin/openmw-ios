@@ -76,8 +76,36 @@ CMAKEEOF
   # RUN_RESULT_VAR. Preset it to 0: plain Lua 5.1 lua_newstate() takes a
   # custom lua_Alloc by design (that is its core API), so 0 (success) is
   # the truthful result; the compile half of try_run still runs for real.
+  # Round 12 fix: Run 11 cleared every dep, then engine configure died
+  # with REQUIRED package OpenGL not found (see deps/build-all.sh shims
+  # for the shim OpenGL.framework that now also ships in the sysroot).
+  # Two more pieces are needed here:
+  # (1) OSG must take its iPhone branch. Without OSG_BUILD_PLATFORM_IPHONE
+  # the pinned OSG fork treats this as a macOS build: it UNSETs the
+  # seeded OPENGL_gl_LIBRARY / OPENGL_INCLUDE_DIR cache vars, calls
+  # find_package(OpenGL) again (no OpenGL.framework exists in the
+  # iPhone SDK, so it fails), and defaults OSG_WINDOWING_SYSTEM to
+  # Cocoa, which also cannot build against the iPhone SDK. Its iPhone
+  # branch instead links OpenGLES.framework directly and forces the
+  # IOS windowing system. That branch hardcodes IPHONE_DEVROOT as
+  # /Applications/Xcode.app/... and defaults IPHONE_SDKVER to 10.2, so
+  # seed IPHONE_SDKVER with the real SDK version (a -D cache entry wins
+  # over OSG's non-FORCE cache default) and make sure the legacy
+  # /Applications/Xcode.app path resolves to the active Xcode.
+  SDK_VER="$(basename "$SDK" | sed -e 's/^iPhoneOS//' -e 's/\.sdk$//')"
+  XCODE_APP="$(dirname "$(dirname "$(xcode-select -p)")")"
+  if [ ! -e /Applications/Xcode.app ] && [ -d "$XCODE_APP" ]; then
+    sudo -n ln -s "$XCODE_APP" /Applications/Xcode.app 2>/dev/null || ln -s "$XCODE_APP" /Applications/Xcode.app 2>/dev/null || true
+    echo "- Xcode.app legacy path for OSG iPhone branch: $(ls -ld /Applications/Xcode.app 2>/dev/null || echo unavailable)" >> results/summary.md
+  fi
+  echo "- OSG iPhone branch: SDKVER=${SDK_VER}" >> results/summary.md
   START=$SECONDS
   if cmake -S build/openmw -B build/openmw-b -G "$GEN" "${CMAKE_IOS[@]}" \
+      -DOSG_BUILD_PLATFORM_IPHONE=ON \
+      -DIPHONE_SDKVER="$SDK_VER" \
+      -DIPHONE_VERSION_MIN=15.0 \
+      -DOSG_WINDOWING_SYSTEM=IOS \
+      -DCMAKE_FRAMEWORK_PATH="$SYSROOT/frameworks" \
       -DRUN_RESULT_VAR=0 \
       -DCMAKE_INSTALL_PREFIX="$ROOT/install-openmw" \
       -DBUILD_OPENMW=ON -DBUILD_LAUNCHER=OFF -DBUILD_WIZARD=OFF -DBUILD_OPENCS=OFF \
@@ -90,8 +118,9 @@ CMAKEEOF
       -DOPENMW_USE_SYSTEM_YAML_CPP=OFF \
       -DOPENMW_USE_SYSTEM_SQLITE3=OFF \
       -DOPENGL_PROFILE=GLES3 \
-      -DOPENGL_INCLUDE_DIR="$SDK/System/Library/Frameworks/OpenGLES.framework/Headers" \
+      -DOPENGL_INCLUDE_DIR="$SYSROOT/include" \
       -DOPENGL_gl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
+      -DOPENGL_glu_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DOPENGL_opengl_LIBRARY="$SDK/System/Library/Frameworks/OpenGLES.framework" \
       -DLZ4_INCLUDE_DIR="$SYSROOT/include" \
       -DLZ4_LIBRARY="$SYSROOT/lib/liblz4.a" \
