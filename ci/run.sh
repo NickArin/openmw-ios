@@ -327,21 +327,32 @@ PYEOF
   else
     echo "- Round 20: WARNING sky.cpp patch failed (pattern mismatch)" >> results/summary.md
   fi
-  # Round 21 fix: Run 20 cleared every dep and engine configure, built
-  # 1174s, then failed in apps/openmw/mwsound/openaloutput.hpp:12:
-  # fatal error: 'al.h' file not found. Verified locally and in the
-  # research notes (SS2.5, xyzz recipe): OpenMW includes OpenAL as
-  # bare "al.h" / "alc.h" (openaloutput.hpp, alext.h, efx.h), and
-  # CMake's FindOpenAL is documented the same way - projects use
-  # #include "al.h", not <AL/al.h>. openal-soft installs its headers
-  # under include/AL/, so OPENAL_INCLUDE_DIR must point at that AL
-  # directory itself, exactly as the xyzz recipe seeds it:
-  # -DOPENAL_INCLUDE_DIR=<prefix>/include/AL/. This run seeded it to
-  # "$SYSROOT/include" instead, which passes configure (the seeded
-  # cache var satisfies find_package's required-var check) but leaves
-  # no al.h on the include path, so the first mwsound TU fails.
-  # Point the seed at include/AL below.
+  # Round 21 fix (Run 20 'al.h' file not found): seeded
+  # OPENAL_INCLUDE_DIR to sysroot/include/AL - that got mwsound
+  # compiling and Run 21 built all the way to the link stage, but
+  # the seed itself is flawed (main-chat verification against the
+  # local 0.51 source, Nov 9): seeding an include var to a
+  # subdirectory makes the compiler search ONLY there, and the
+  # engine carries its OWN vendored alext.h/efx.h in mwsound/
+  # sharing the AL_ALEXT_H guard with openal-soft's versions, so
+  # bare-name resolution against the AL directory risks silently
+  # shadowing the vendored headers.
+  # Round 22 fix: seed the include ROOT again (below) and fix the
+  # bare includes at the consumer instead - openaloutput.hpp is
+  # the one TU that includes al.h/alc.h/alext.h by bare name from
+  # outside the vendored pair, so prefix its three includes with
+  # AL/ and let the root seed resolve them truthfully.
+  OA_HPP="build/openmw/apps/openmw/mwsound/openaloutput.hpp"
+  if grep -q '#include "al.h"' "$OA_HPP" && grep -q '#include "alc.h"' "$OA_HPP" && grep -q '#include "alext.h"' "$OA_HPP"; then
+    sed -i '' 's|#include "al.h"|#include "AL/al.h"|' "$OA_HPP"
+    sed -i '' 's|#include "alc.h"|#include "AL/alc.h"|' "$OA_HPP"
+    sed -i '' 's|#include "alext.h"|#include "AL/alext.h"|' "$OA_HPP"
+    echo "- Round 22: prefixed bare al.h/alc.h/alext.h includes in openaloutput.hpp to AL/... (fix at the consumer)" >> results/summary.md
+  else
+    echo "- Round 22: WARNING expected bare OpenAL includes not found in openaloutput.hpp" >> results/summary.md
+  fi
   echo "- Round 21: fixed OPENAL_INCLUDE_DIR sysroot/include -> sysroot/include/AL (OpenMW includes bare al.h, openal-soft installs headers under AL/)" >> results/summary.md
+  echo "- Round 22: reverted OPENAL_INCLUDE_DIR sysroot/include/AL -> sysroot/include (seed the include root, never a subdirectory)" >> results/summary.md
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
@@ -410,7 +421,7 @@ PYEOF
       -DFFmpeg_SWSCALE_LIBRARY="$SYSROOT/lib/libswscale.a" \
       -DFFmpeg_SWRESAMPLE_INCLUDE_DIR="$SYSROOT/include" \
       -DFFmpeg_SWRESAMPLE_LIBRARY="$SYSROOT/lib/libswresample.a" \
-      -DOPENAL_INCLUDE_DIR="$SYSROOT/include/AL" \
+      -DOPENAL_INCLUDE_DIR="$SYSROOT/include" \
       -DOPENAL_LIBRARY="$OPENAL_LIB" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
@@ -421,7 +432,14 @@ PYEOF
     else
       echo "- engine build: FAIL ($((SECONDS-START))s)" >> results/summary.md
       echo "--- first errors:" >> results/summary.md
-      grep -m 40 "error:" logs/engine-build.log >> results/summary.md || tail -40 logs/engine-build.log >> results/summary.md
+      # Round 22: Run 21 reached the link stage and failed there, but
+      # the old grep only captured the generic 'clang++: error:
+      # linker command failed' line - ld diagnostics (Undefined
+      # symbols blocks, 'ld: ...', 'symbol(s) not found') contain
+      # no 'error:' and were dropped, so the Run 21 issue named no
+      # failing symbol at all. Capture the linker blocks explicitly.
+      grep -m 4 -A 16 "Undefined symbols" logs/engine-build.log >> results/summary.md || true
+      grep -m 60 -E "error:|ld: |symbol\(s\) not found|duplicate symbol" logs/engine-build.log >> results/summary.md || tail -60 logs/engine-build.log >> results/summary.md
     fi
   else
     echo "- engine configure: FAIL" >> results/summary.md
