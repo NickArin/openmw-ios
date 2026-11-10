@@ -353,6 +353,47 @@ PYEOF
   fi
   echo "- Round 21: fixed OPENAL_INCLUDE_DIR sysroot/include -> sysroot/include/AL (OpenMW includes bare al.h, openal-soft installs headers under AL/)" >> results/summary.md
   echo "- Round 22: reverted OPENAL_INCLUDE_DIR sysroot/include/AL -> sysroot/include (seed the include root, never a subdirectory)" >> results/summary.md
+  # Round 23 fix: Run 22 cleared every dep, engine configure AND the full
+  # compile, then the final link died with "ld: unknown options:
+  # -noall_load". Verified in the local 0.51 source: the only source of
+  # that flag is cmake/WholeArchive.cmake, whose AppleClang branch
+  # brackets the OSG plugin archives with -Wl,-all_load ... -Wl,-noall_load
+  # so the plugin registration objects are not dead-stripped. The new
+  # Apple linker shipped with Xcode 16 no longer accepts -noall_load at
+  # all. Replace the bracket with one -force_load per archive: that is
+  # the selective whole-archive spelling both the classic and the new
+  # linker accept, and it force-loads exactly the plugin archives the
+  # function was handed, nothing else on the link line.
+  WA_CMAKE="build/openmw/cmake/WholeArchive.cmake"
+  if grep -q "noall_load" "$WA_CMAKE"; then
+    if python3 - "$WA_CMAKE" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = "        set(${OUT_VAR} -Wl,-all_load ${ARGN} -Wl,-noall_load PARENT_SCOPE)"
+new = """        set(_whole_archive_opts "")
+        foreach(_whole_archive_lib IN LISTS ARGN)
+            list(APPEND _whole_archive_opts "-Wl,-force_load,${_whole_archive_lib}")
+        endforeach()
+        set(${OUT_VAR} ${_whole_archive_opts} PARENT_SCOPE)"""
+if src.count(old) != 1:
+    print("PATTERN NOT FOUND OR NOT UNIQUE: WholeArchive AppleClang line")
+    sys.exit(1)
+src = src.replace(old, new)
+if "noall_load" in src or "all_load" in src:
+    print("LEGACY TOKEN REMAINS in WholeArchive.cmake")
+    sys.exit(1)
+open(path, "w").write(src)
+print("WholeArchive.cmake patched: -all_load/-noall_load bracket -> per-archive -force_load")
+PYEOF
+    then
+      echo "- Round 23: replaced -all_load/-noall_load bracket in cmake/WholeArchive.cmake with per-archive -force_load (Xcode 16 linker rejects -noall_load)" >> results/summary.md
+    else
+      echo "- Round 23: WARNING WholeArchive.cmake patch failed (pattern mismatch)" >> results/summary.md
+    fi
+  else
+    echo "- Round 23: WARNING noall_load not found in cmake/WholeArchive.cmake" >> results/summary.md
+  fi
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
