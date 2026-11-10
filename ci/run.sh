@@ -579,11 +579,25 @@ else
 fi
 
 # ================= Package unsigned IPA =================
-BIN="$(find build/openmw-b -maxdepth 3 -name openmw -type f 2>/dev/null | head -1)"
+# Round 25 fix: Run 24 was the first run where the engine build itself
+# said OK (1346s), yet the IPA step still reported "no engine binary".
+# Root cause is in THIS search, not the build: on APPLE the engine's
+# top-level CMakeLists sets CMAKE_RUNTIME_OUTPUT_DIRECTORY to
+# ${APP_BUNDLE_DIR}/Contents/MacOS, with APP_BUNDLE_DIR =
+# build/openmw-b/OpenMW.app (project(OpenMW)), so the executable lands
+# at build/openmw-b/OpenMW.app/Contents/MacOS/openmw - depth 4 below
+# build/openmw-b. The old -maxdepth 3 search could never reach it.
+# Drop the depth limit, match case-insensitively, and log the found
+# binary (path + size) in the summary so the location is verifiable.
+# Resources likewise live in the built bundle's Contents/Resources
+# (OPENMW_RESOURCES_ROOT on APPLE), not only in build/openmw-b/resources.
+BIN="$(find build/openmw-b -iname openmw -type f 2>/dev/null | head -1)"
 if [ -n "$BIN" ]; then
+  echo "- engine binary: $BIN ($(du -h "$BIN" | cut -f1))" >> results/summary.md
   rm -rf package
   mkdir -p package/Payload/OpenMW.app
   cp "$BIN" package/Payload/OpenMW.app/openmw
+  [ -d build/openmw-b/OpenMW.app/Contents/Resources/resources ] && cp -R build/openmw-b/OpenMW.app/Contents/Resources/resources package/Payload/OpenMW.app/
   [ -d build/openmw-b/resources ] && cp -R build/openmw-b/resources package/Payload/OpenMW.app/
   cat > package/Payload/OpenMW.app/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
