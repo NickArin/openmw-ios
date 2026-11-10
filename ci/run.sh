@@ -394,6 +394,87 @@ PYEOF
   else
     echo "- Round 23: WARNING noall_load not found in cmake/WholeArchive.cmake" >> results/summary.md
   fi
+  # Round 24 fixes: Run 23 cleared every dep and engine configure, the
+  # full compile finished, and the final link (the Round 23 force_load
+  # fix worked - no more -noall_load) failed on exactly three undefined
+  # symbol groups captured before the summary's -A 16 truncation:
+  # (1) crashCatcherInstall, referenced from Debug::wrapApplication in
+  # components/debug/debugging.cpp. Round 17 excluded the crashcatcher
+  # component on iOS (its .cpp calls system/fork/execl), but
+  # components/crashcatcher/crashcatcher.hpp still declares the REAL
+  # function - not the inline stub - under defined(__APPLE__) (and
+  # __unix__/__posix, also true on iOS), so the caller compiled against
+  # a declaration whose definition is never built. This cloned tree is
+  # only ever built for iOS in this pipeline, so force the header's
+  # stub branch: replace its two-line #if condition with #if 0, which
+  # selects the inline no-op crashCatcherInstall. Verified against the
+  # local 0.51 source (header + debugging.cpp call site).
+  CC_HPP="build/openmw/components/crashcatcher/crashcatcher.hpp"
+  if grep -q "void crashCatcherInstall" "$CC_HPP"; then
+    if python3 - "$CC_HPP" <<'PYEOF'
+import sys
+path = sys.argv[1]
+lines = open(path).read().splitlines(keepends=True)
+for i, line in enumerate(lines):
+    if line.startswith("#if (defined(__APPLE__)"):
+        if "defined(__posix))" not in lines[i + 1]:
+            print("PATTERN MISMATCH: crashcatcher.hpp condition second line")
+            sys.exit(1)
+        lines[i:i + 2] = ["#if 0 // iOS (ci/run.sh Round 24): crashcatcher component excluded, use the inline stub below\n"]
+        open(path, "w").write("".join(lines))
+        print("crashcatcher.hpp patched: real declaration disabled on iOS, inline stub selected")
+        sys.exit(0)
+print("PATTERN NOT FOUND: crashcatcher.hpp #if condition")
+sys.exit(1)
+PYEOF
+    then
+      echo "- Round 24: disabled real crashCatcherInstall declaration in crashcatcher.hpp on iOS (component excluded since Round 17, header still declared it under __APPLE__)" >> results/summary.md
+    else
+      echo "- Round 24: WARNING crashcatcher.hpp patch failed (pattern mismatch)" >> results/summary.md
+    fi
+  else
+    echo "- Round 24: WARNING crashCatcherInstall declaration not found in crashcatcher.hpp" >> results/summary.md
+  fi
+  # (2) _graphicswindow_Cocoa, referenced from the global initializer
+  # in components/sdlutil/sdlcursormanager.cpp: its USE_GRAPHICSWINDOW()
+  # call forces registration of the OS-native windowing system. Verified
+  # in the pinned OSG fork's include/osgViewer/GraphicsWindow header:
+  # the macro has NO iOS branch - under defined(__APPLE__) it expands
+  # to graphicswindow_Cocoa unless OSG_WINDOWING_SYSTEM_NONE/CARBON is
+  # defined, and no Cocoa GraphicsWindow is built in the iOS OSG.
+  # It is the only USE_GRAPHICSWINDOW() call in the whole engine tree,
+  # and the engine's real window is SDL-owned (GraphicsWindowSDL2 in
+  # the same component, per the Nov 9 addendum) - Android already
+  # conditionally skips this same call. Exclude __APPLE__ from the
+  # guard: in this iOS-only clone __APPLE__ means the iOS target.
+  CURSOR_CPP="build/openmw/components/sdlutil/sdlcursormanager.cpp"
+  if python3 - "$CURSOR_CPP" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = "#if defined(OSG_LIBRARY_STATIC) && (!defined(ANDROID) || OSG_VERSION_GREATER_THAN(3, 6, 5))"
+new = "#if defined(OSG_LIBRARY_STATIC) && (!defined(ANDROID) || OSG_VERSION_GREATER_THAN(3, 6, 5)) && !defined(__APPLE__)"
+if src.count(old) != 1:
+    print("PATTERN NOT FOUND OR NOT UNIQUE: sdlcursormanager USE_GRAPHICSWINDOW guard")
+    sys.exit(1)
+src = src.replace(old, new)
+open(path, "w").write(src)
+print("sdlcursormanager.cpp patched: USE_GRAPHICSWINDOW() skipped on Apple/iOS")
+PYEOF
+  then
+    echo "- Round 24: skipped USE_GRAPHICSWINDOW() in sdlcursormanager.cpp on iOS (OSG fork macro has no iOS branch, expands to Cocoa; engine window is SDL-owned)" >> results/summary.md
+  else
+    echo "- Round 24: WARNING sdlcursormanager.cpp patch failed (pattern mismatch)" >> results/summary.md
+  fi
+  # (3) _iconv / _iconv_open / _iconv_close, referenced from the
+  # sysroot FFmpeg (libavcodec decode.o, libavformat mpegts.o). The
+  # sysroot FFmpeg was configured with iconv autodetected from the
+  # iPhone SDK, but the engine seeds FFmpeg include/library vars
+  # directly (no pkg-config), so FFmpeg's transitive system dependency
+  # never reaches the link line. libiconv ships in the iPhone SDK as a
+  # system library; add it via the exe linker flags in the engine
+  # cmake invocation below (-DCMAKE_EXE_LINKER_FLAGS=-liconv).
+  echo "- Round 24: added -liconv to engine exe linker flags (FFmpeg iconv symbols; libiconv is an iPhone SDK system library)" >> results/summary.md
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
@@ -464,6 +545,7 @@ PYEOF
       -DFFmpeg_SWRESAMPLE_LIBRARY="$SYSROOT/lib/libswresample.a" \
       -DOPENAL_INCLUDE_DIR="$SYSROOT/include" \
       -DOPENAL_LIBRARY="$OPENAL_LIB" \
+      -DCMAKE_EXE_LINKER_FLAGS="-liconv" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
       > logs/engine-configure.log 2>&1; then
@@ -479,7 +561,10 @@ PYEOF
       # symbols blocks, 'ld: ...', 'symbol(s) not found') contain
       # no 'error:' and were dropped, so the Run 21 issue named no
       # failing symbol at all. Capture the linker blocks explicitly.
-      grep -m 4 -A 16 "Undefined symbols" logs/engine-build.log >> results/summary.md || true
+      # Round 24: widened -A 16 -> -A 120 (and -m 4 -> -m 1): Run 23's
+      # undefined-symbols block was cut off mid-list at 16 lines, so any
+      # symbols after _iconv_open were never reported.
+      grep -m 1 -A 120 "Undefined symbols" logs/engine-build.log >> results/summary.md || true
       grep -m 60 -E "error:|ld: |symbol\(s\) not found|duplicate symbol" logs/engine-build.log >> results/summary.md || tail -60 logs/engine-build.log >> results/summary.md
     fi
   else
