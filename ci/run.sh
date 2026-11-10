@@ -327,6 +327,21 @@ PYEOF
   else
     echo "- Round 20: WARNING sky.cpp patch failed (pattern mismatch)" >> results/summary.md
   fi
+  # Round 21 fix: Run 20 cleared every dep and engine configure, built
+  # 1174s, then failed in apps/openmw/mwsound/openaloutput.hpp:12:
+  # fatal error: 'al.h' file not found. Verified locally and in the
+  # research notes (SS2.5, xyzz recipe): OpenMW includes OpenAL as
+  # bare "al.h" / "alc.h" (openaloutput.hpp, alext.h, efx.h), and
+  # CMake's FindOpenAL is documented the same way - projects use
+  # #include "al.h", not <AL/al.h>. openal-soft installs its headers
+  # under include/AL/, so OPENAL_INCLUDE_DIR must point at that AL
+  # directory itself, exactly as the xyzz recipe seeds it:
+  # -DOPENAL_INCLUDE_DIR=<prefix>/include/AL/. This run seeded it to
+  # "$SYSROOT/include" instead, which passes configure (the seeded
+  # cache var satisfies find_package's required-var check) but leaves
+  # no al.h on the include path, so the first mwsound TU fails.
+  # Point the seed at include/AL below.
+  echo "- Round 21: fixed OPENAL_INCLUDE_DIR sysroot/include -> sysroot/include/AL (OpenMW includes bare al.h, openal-soft installs headers under AL/)" >> results/summary.md
   # NOTE (addendum item 5): keep OPENMW_OSX_DEPLOYMENT OFF permanently -
   # upstream's APPLE packaging (Contents/MacOS bundle layout, macOS plist,
   # signing machinery) must never enter this unsigned sideload build; the
@@ -395,7 +410,7 @@ PYEOF
       -DFFmpeg_SWSCALE_LIBRARY="$SYSROOT/lib/libswscale.a" \
       -DFFmpeg_SWRESAMPLE_INCLUDE_DIR="$SYSROOT/include" \
       -DFFmpeg_SWRESAMPLE_LIBRARY="$SYSROOT/lib/libswresample.a" \
-      -DOPENAL_INCLUDE_DIR="$SYSROOT/include" \
+      -DOPENAL_INCLUDE_DIR="$SYSROOT/include/AL" \
       -DOPENAL_LIBRARY="$OPENAL_LIB" \
       -DBOOST_ROOT="$SYSROOT" -DBoost_NO_BOOST_CMAKE=ON -DBoost_NO_SYSTEM_PATHS=ON \
       -DICU_ROOT="$SYSROOT" \
