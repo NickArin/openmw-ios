@@ -640,7 +640,17 @@ PLIST
 </dict>
 </plist>
 ENT
-  codesign -f -s - --entitlements package/entitlements.plist package/Payload/OpenMW.app || echo "WARN: ad-hoc codesign failed, IPA ships without embedded entitlements"
+  # Round 27: round 26 signed the .app bundle and produced a binary with NO
+  # LC_CODE_SIGNATURE at all (verified by parsing the shipped IPA), so the
+  # entitlement never embedded. Sign the main executable directly instead,
+  # and log the outcome into the summary so the results issue proves it.
+  SIGNOUT=$(codesign -f -s - --entitlements package/entitlements.plist package/Payload/OpenMW.app/openmw 2>&1) && SIGNRC=ok || SIGNRC=FAILED
+  echo "- ad-hoc codesign of engine binary: $SIGNRC ${SIGNOUT}" >> results/summary.md
+  if grep -a -q "increased-memory-limit" package/Payload/OpenMW.app/openmw; then
+    echo "- increased-memory entitlement embedded in binary: YES" >> results/summary.md
+  else
+    echo "- increased-memory entitlement embedded in binary: NO" >> results/summary.md
+  fi
   ( cd package && zip -qry "$SYSROOT/OpenMW-unsigned.ipa" Payload )
   echo "- IPA packaged: $(du -h "$SYSROOT/OpenMW-unsigned.ipa" | cut -f1) (inside sysroot artifact)" >> results/summary.md
 else
