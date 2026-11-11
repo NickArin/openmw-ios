@@ -616,9 +616,31 @@ if [ -n "$BIN" ]; then
   <key>UISupportedInterfaceOrientations</key>
   <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
   <key>UILaunchStoryboardName</key><string></string>
+  <key>UIFileSharingEnabled</key><true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key><true/>
 </dict>
 </plist>
 PLIST
+  # Round 26: ship the Mac-bundle side files (controller DB, defaults, the
+  # CMake-generated starter cfg) at the app root, embed the increased-memory
+  # entitlement via an ad-hoc signature so AltStore's re-sign can carry it,
+  # then zip. Ad-hoc signing is throwaway - AltStore replaces the signature;
+  # only the entitlements need to survive, and AltSign reads them from the
+  # binary's existing signature.
+  RESDIR="build/openmw-b/OpenMW.app/Contents/Resources"
+  for f in defaults.bin gamecontrollerdb.txt openmw.cfg; do
+    [ -f "$RESDIR/$f" ] && cp "$RESDIR/$f" package/Payload/OpenMW.app/ || true
+  done
+  cat > package/entitlements.plist <<'ENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.developer.kernel.increased-memory-limit</key><true/>
+</dict>
+</plist>
+ENT
+  codesign -f -s - --entitlements package/entitlements.plist package/Payload/OpenMW.app || echo "WARN: ad-hoc codesign failed, IPA ships without embedded entitlements"
   ( cd package && zip -qry "$SYSROOT/OpenMW-unsigned.ipa" Payload )
   echo "- IPA packaged: $(du -h "$SYSROOT/OpenMW-unsigned.ipa" | cut -f1) (inside sysroot artifact)" >> results/summary.md
 else
